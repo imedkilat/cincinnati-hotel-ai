@@ -172,8 +172,8 @@ Required env variables (in backend/.env):
 
 env
 Copy code
-N8N_WEBHOOK_URL=https://your-n8n-instance/webhook/hotel-chat
-N8N_ESCALATE_URL=https://your-n8n-instance/webhook/hotel-escalate
+N8N_WEBHOOK_URL=https://imedkilat.onrender.com/webhook/hotel-chat
+N8N_ESCALATE_URL=https://imedkilat.onrender.com/webhook/hotel-escalate
 Frontend
 From the project root:
 
