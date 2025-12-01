@@ -1,0 +1,5 @@
+{
+  "name": "Cincinnati Hotel AI",
+  "description": "A minimalist AI concierge for hotel guests powered by Gemini 2.5 Flash.",
+  "requestFramePermissions": []
+}
