@@ -15,6 +15,7 @@ import {
   FileCheck,
 } from "lucide-react";
 import { HotelConfig } from "../types";
+import { API_BASE } from "../config";
 
 type AdminPanelProps = {
   config: HotelConfig; // we keep this so App.tsx does not break, but we only use hotelName
@@ -75,7 +76,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setStatsLoading(true);
         setStatsError(null);
 
-        const res = await fetch("/api/admin/stats");
+        const res = await fetch(`${API_BASE}/api/admin/stats`);
         if (!res.ok) {
           throw new Error(`Failed to load stats (${res.status})`);
         }
@@ -141,7 +142,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch("/api/admin/pdf", {
+      const res = await fetch(`${API_BASE}/api/admin/pdf`, {
         method: "POST",
         body: formData,
       });
@@ -254,7 +255,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <p>{uploadError}</p>
               </div>
             )}
-          
           </div>
         </div>
 

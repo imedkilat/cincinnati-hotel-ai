@@ -15,6 +15,7 @@ import {
 import { ChatMessage } from "./components/ChatMessage";
 import { SuggestionChip } from "./components/SuggestionChip";
 import { AdminPanel } from "./components/AdminPanel";
+import { API_BASE } from "./config";
 
 const INITIAL_SUGGESTIONS = [
   "What time is check-in?",
@@ -182,7 +183,7 @@ export default function App() {
     setEscalationStatus("submitting");
 
     try {
-      const res = await fetch("/api/chat/escalate", {
+      const res = await fetch(`${API_BASE}/api/chat/escalate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -433,19 +434,3 @@ export default function App() {
     </div>
   );
 }
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
-
-const res = await fetch(`${API_BASE}/api/chat/escalate`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    sessionId: getCurrentSessionId(),
-    question: escalationQuestion,
-    conversation: chatState.messages,
-    name,
-    email,
-    phone,
-  }),
-});
-
