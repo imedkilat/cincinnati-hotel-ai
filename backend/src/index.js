@@ -9,7 +9,7 @@ import pdfParse from "pdf-parse-debugging-disabled";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "4mb" }));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,21 +30,6 @@ const upload = multer({
   dest: path.join(__dirname, "../uploads"),
 });
 let currentPdfMeta = null; // { filename, uploadedAt }
-
-// In-memory stats for now
-let stats = {
-  totalSessions: 0,
-  topics: {}, // { Rooms: 10, Restaurant: 5 }
-};
-
-let sessions = {
-  // [sessionId]: {
-  //   questions: number,
-  //   unansweredCount: number,
-  //   startedAt: string,
-  //   lastUnansweredQuestion?: string
-  // }
-};
 
 let currentPdfPath = null;
 let hotelText = ""; // extracted text from the uploaded hotel PDF
@@ -81,149 +66,126 @@ app.post("/api/admin/pdf", upload.single("file"), async (req, res) => {
 });
 
 // Get stats
-app.get("/api/admin/stats", (req, res) => {
-  const topicsArray = Object.entries(stats.topics || {}).map(
-    ([name, count]) => ({
-      name,
-      count,
-    })
-  );
-
-  // Build session list
-  const allSessions = Object.entries(sessions || {}).map(([id, info]) => ({
-    sessionId: id,
-    questionCount: info.questions || 0,
-    unansweredCount: info.unansweredCount || 0,
-    startedAt: info.startedAt,
-    lastUnansweredQuestion: info.lastUnansweredQuestion || null,
-  }));
-
-  // Sort newest first and limit, e.g. last 10 sessions
-  const recentSessions = allSessions
-    .sort(
-      (a, b) =>
-        new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-    )
-    .slice(0, 10);
-
-  const lastUpdated = new Date().toISOString();
-
+app.get("/api/admin/stats", (_req, res) => {
+  const topicsArr = Object.entries(stats.topics || {}).map(([topic, count]) => ({ topic, count }));
   res.json({
-    totalSessions: stats.totalSessions || allSessions.length || 0,
-    topics: topicsArray,
-    recentSessions,
-    lastUpdated,
-    currentPdf: currentPdfMeta,
+    totalSessions: stats.totalSessions || 0,
+    unansweredQuestions: stats.unansweredQuestions || 0,
+    lastUpdate: new Date().toISOString(),
+    currentPdf: stats.currentPdf || null,
+    topics: topicsArr,
+    recentSessions, // [{ id, questionCount, status, startTime }]
   });
 });
 
+
 // -------- Chat routes --------
+// Chat message: frontend -> backend -> n8n -> backend -> frontend
+import crypto from "node:crypto";
+
+// single sources of truth (keep these ONLY once in the file)
+const sessions = {};                      // { [sessionId]: { questions, unansweredCount, startedAt, status } }
+const recentSessions = [];                // newest first [{ id, questionCount, status, startTime }]
+const stats = { totalSessions: 0, topics: {}, unansweredQuestions: 0, currentPdf: null };
+
 
 // Chat message: frontend -> backend -> n8n -> backend -> frontend
 app.post("/api/chat/message", async (req, res) => {
-  const { sessionId, message } = req.body;
+  const { sessionId: clientSid, message } = req.body || {};
   if (!message) return res.status(400).json({ error: "Missing message" });
 
+  const sessionKey = clientSid || crypto.randomUUID();
+
+  const payload = {
+    sessionId: sessionKey,
+    message,
+    hotelInfo: hotelText || "",
+  };
+
+  console.log("Sending to n8n:", JSON.stringify(payload, null, 2));
+  console.log("CHAT →", N8N_WEBHOOK_URL, "sid:", sessionKey, "payloadKeys:", Object.keys(payload));
+
+  let reply = "Sorry, I don't have that information right now.";
+  let topic = "Uncategorized";
+  let canAnswer = true;
+
   try {
-    const n8nRes = await fetch(N8N_WEBHOOK_URL, {
+    const r = await fetch(N8N_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId,
-        message,
-        hotelInfo: hotelText || "", // send extracted PDF text to n8n
-      }),
+      body: JSON.stringify(payload),
     });
 
-    if (!n8nRes.ok) {
-      const errText = await n8nRes.text();
-      console.error("n8n error:", n8nRes.status, errText);
-      return res
-        .status(500)
-        .json({ error: "Failed to get response from n8n workflow" });
+    if (r.ok) {
+      const raw = await r.text();
+      let data; try { data = JSON.parse(raw); } catch { data = raw; }
+      const out = Array.isArray(data) ? data[0] : data;
+      reply = out?.answer || out?.reply || reply;
+      topic = out?.topic || topic;
+      canAnswer = typeof out?.canAnswer === "boolean" ? out.canAnswer : true;
+    } else {
+      console.error("n8n chat error:", r.status, await r.text());
+      canAnswer = false;
+      topic = "System";
+      reply = "Sorry, I can’t reach the knowledge workflow right now.";
     }
-
-    const n8nData = await n8nRes.json();
-    const result = Array.isArray(n8nData) ? n8nData[0] : n8nData;
-
-    const answer = result.answer || result.reply || "";
-    const topic = result.topic || "Uncategorized";
-    const canAnswer =
-      typeof result.canAnswer === "boolean" ? result.canAnswer : true;
-
-    // --- session tracking ---
-    // Fall back if somehow sessionId is missing
-    const sessionKey =
-      sessionId ||
-      `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-    if (!sessions[sessionKey]) {
-      sessions[sessionKey] = {
-        questions: 0,
-        unansweredCount: 0,
-        startedAt: new Date().toISOString(),
-      };
-      // Count a new session only when we first see this id
-      stats.totalSessions = (stats.totalSessions || 0) + 1;
-    }
-
-    // Increment questions for this session
-    sessions[sessionKey].questions += 1;
-
-    // Increment unanswered if the bot couldn't answer from PDF
-    if (!canAnswer) {
-      sessions[sessionKey].unansweredCount += 1;
-      sessions[sessionKey].lastUnansweredQuestion = message;
-    }
-
-    // Topic stats
-    stats.topics[topic] = (stats.topics[topic] || 0) + 1;
-
-    res.json({ answer, topic, canAnswer });
   } catch (err) {
-    console.error("Chat error:", error);
-    res.status(500).json({ error: "Failed to generate answer from n8n or AI" });
+    console.error("Chat error:", err);
+    canAnswer = false;
+    topic = "System";
+    reply = "Sorry, something went wrong.";
   }
+
+  // track session + recent list
+  const nowIso = new Date().toISOString();
+  if (!sessions[sessionKey]) {
+    sessions[sessionKey] = { questions: 0, unansweredCount: 0, startedAt: nowIso, status: "Resolved" };
+    stats.totalSessions = (stats.totalSessions || 0) + 1;
+    recentSessions.unshift({ id: sessionKey, questionCount: 0, status: "Resolved", startTime: nowIso });
+    if (recentSessions.length > 50) recentSessions.pop();
+  }
+
+  sessions[sessionKey].questions += 1;
+  const rs = recentSessions.find(s => s.id === sessionKey);
+  if (rs) rs.questionCount += 1;
+
+  if (!canAnswer) {
+    sessions[sessionKey].unansweredCount += 1;
+    sessions[sessionKey].status = "Needs Review";
+    if (rs) rs.status = "Needs Review";
+    stats.unansweredQuestions = (stats.unansweredQuestions || 0) + 1;
+  }
+
+  res.json({ reply, topic, canAnswer, sessionId: sessionKey });
 });
+
 
 // Escalate unanswered question (called from frontend contact form)
 app.post("/api/chat/escalate", async (req, res) => {
-  const { sessionId, question, conversation, name, email, phone } = req.body;
+  const { name, email, phone, question, transcript, sessionId } = req.body || {};
+
+  if (sessionId && sessions[sessionId]) {
+    sessions[sessionId].status = "Needs Review";
+    const rs = recentSessions.find(s => s.id === sessionId);
+    if (rs) rs.status = "Needs Review";
+  }
+
+  const payload = { sessionId, sessionID: sessionId, name, email, phone, question, transcript };
 
   try {
-    const n8nRes = await fetch(N8N_ESCALATE_URL, {
+    const r = await fetch(N8N_ESCALATE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId,
-        question,
-        conversation,
-        name,
-        email,
-        phone,
-      }),
+      body: JSON.stringify(payload),
     });
-
-    if (!n8nRes.ok) {
-      console.error("n8n escalate error status", n8nRes.status);
-      // still tell frontend ok so user doesn't see an error
-      return res.json({ ok: false });
+    if (!r.ok) {
+      console.error("n8n escalate error:", r.status, await r.text());
+      return res.status(500).json({ ok: false });
     }
-
-    // optional: read n8n JSON
-    let data;
-    try {
-      data = await n8nRes.json();
-      console.log("Escalate n8n response:", data);
-    } catch {
-      data = {};
-    }
-
-    return res.json({ ok: true });
+    res.json({ ok: true });
   } catch (err) {
-    console.error("Error calling n8n escalate webhook", err);
-    // don't blow up the UI, just log
-    return res.json({ ok: false });
+    console.error("Escalate error:", err);
+    res.status(500).json({ ok: false });
   }
 });
 
