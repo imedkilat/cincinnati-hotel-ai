@@ -19,8 +19,8 @@ const sessions = {};                      // { [sessionId]: { questions, unanswe
 const recentSessions = [];                // newest first [{ id, questionCount, status, startTime }]
 const stats = { totalSessions: 0, topics: {}, unansweredQuestions: 0, currentPdf: null };
 
-let currentPdfMeta = null; // { filename, uploadedAt }
-let currentPdfMeta: { filename: string; uploadedAt: string } | null = null;
+
+let currentPdfMeta = null;
 let hotelText = ""; // extracted text from the uploaded hotel PDF
 
 // Single webhook URL to your n8n workflow.
@@ -77,7 +77,7 @@ app.post("/api/admin/pdf", upload.single("file"), async (req, res) => {
       textLength: hotelText.length,
       filename: req.file.originalname,
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Error parsing PDF:", err.message);
     console.error("File path was:", currentPdfPath);
     return res.status(500).json({ 
