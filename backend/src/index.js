@@ -14,12 +14,17 @@ app.use(express.json({ limit: "4mb" }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// single sources of truth (keep these ONLY once in the file)
-const sessions = {};                      // { [sessionId]: { questions, unansweredCount, startedAt, status } }
-const recentSessions = [];                // newest first [{ id, questionCount, status, startTime }]
-const stats = { totalSessions: 0, topics: {}, unansweredQuestions: 0, currentPdf: null };
+// single sources of truth
+const sessions = {};
+const recentSessions = [];
+const stats = {
+  totalSessions: 0,
+  topics: {},
+  unansweredQuestions: 0,
+  currentPdf: null,
+};
 
-
+let currentPdfPath = null; // THIS LINE WAS MISSING → THIS IS THE BUG
 let currentPdfMeta = null;
 let hotelText = ""; // extracted text from the uploaded hotel PDF
 
@@ -39,7 +44,6 @@ const upload = multer({
   dest: path.join(__dirname, "../uploads"),
 });
 
-
 // -------- Admin routes --------
 // Upload hotel PDF
 app.post("/api/admin/pdf", upload.single("file"), async (req, res) => {
@@ -50,7 +54,7 @@ app.post("/api/admin/pdf", upload.single("file"), async (req, res) => {
   try {
     // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
     // FIX: Use the correct variable name (with "let" or just assign properly)
-    currentPdfPath = req.file.path;   // ← this is correct (you already have the var at top)
+    currentPdfPath = req.file.path; // ← this is correct (you already have the var at top)
     // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
 
     const dataBuffer = fs.readFileSync(currentPdfPath);
@@ -80,16 +84,18 @@ app.post("/api/admin/pdf", upload.single("file"), async (req, res) => {
   } catch (err) {
     console.error("Error parsing PDF:", err.message);
     console.error("File path was:", currentPdfPath);
-    return res.status(500).json({ 
+    return res.status(500).json({
       error: "Failed to parse PDF",
-      details: err.message 
+      details: err.message,
     });
   }
 });
 
 // Get stats
 app.get("/api/admin/stats", (_req, res) => {
-  const topicsArr = Object.entries(stats.topics || {}).map(([topic, count]) => ({ topic, count }));
+  const topicsArr = Object.entries(stats.topics || {}).map(
+    ([topic, count]) => ({ topic, count })
+  );
   res.json({
     totalSessions: stats.totalSessions || 0,
     unansweredQuestions: stats.unansweredQuestions || 0,
@@ -99,7 +105,6 @@ app.get("/api/admin/stats", (_req, res) => {
     recentSessions, // [{ id, questionCount, status, startTime }]
   });
 });
-
 
 // -------- Chat routes --------
 import crypto from "node:crypto";
@@ -117,14 +122,13 @@ app.post("/api/chat/message", async (req, res) => {
 
   // THIS IS WHAT n8n WILL RECEIVE
   const payloadToN8n = {
-    sessionId,              // this MUST be here
+    sessionId, // this MUST be here
     message: message.trim(),
     hotelInfo: hotelText || "",
   };
 
   console.log("Sending to n8n →", N8N_WEBHOOK_URL);
   console.log("Payload:", JSON.stringify(payloadToN8n, null, 2));
-
 
   let topic = "Uncategorized";
   let canAnswer = true;
@@ -144,7 +148,11 @@ app.post("/api/chat/message", async (req, res) => {
       topic = out?.topic || topic;
       canAnswer = out?.canAnswer !== false;
     } else {
-      console.error("n8n returned error:", response.status, await response.text());
+      console.error(
+        "n8n returned error:",
+        response.status,
+        await response.text()
+      );
       canAnswer = false;
       reply = "Sorry, I'm having trouble connecting right now.";
     }
@@ -173,7 +181,7 @@ app.post("/api/chat/message", async (req, res) => {
   }
 
   sessions[sessionId].questions += 1;
-  const recentSession = recentSessions.find(s => s.id === sessionId);
+  const recentSession = recentSessions.find((s) => s.id === sessionId);
   if (recentSession) recentSession.questionCount += 1;
 
   if (!canAnswer) {
@@ -188,22 +196,30 @@ app.post("/api/chat/message", async (req, res) => {
     reply,
     topic,
     canAnswer,
-    sessionId,  // always include — critical for first message!
+    sessionId, // always include — critical for first message!
   });
 });
 
-
 // Escalate unanswered question (called from frontend contact form)
 app.post("/api/chat/escalate", async (req, res) => {
-  const { name, email, phone, question, transcript, sessionId } = req.body || {};
+  const { name, email, phone, question, transcript, sessionId } =
+    req.body || {};
 
   if (sessionId && sessions[sessionId]) {
     sessions[sessionId].status = "Needs Review";
-    const rs = recentSessions.find(s => s.id === sessionId);
+    const rs = recentSessions.find((s) => s.id === sessionId);
     if (rs) rs.status = "Needs Review";
   }
 
-  const payload = { sessionId, sessionID: sessionId, name, email, phone, question, transcript };
+  const payload = {
+    sessionId,
+    sessionID: sessionId,
+    name,
+    email,
+    phone,
+    question,
+    transcript,
+  };
 
   try {
     const r = await fetch(N8N_ESCALATE_URL, {
