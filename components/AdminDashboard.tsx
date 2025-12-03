@@ -104,6 +104,11 @@ export default function AdminDashboard() {
     }
   };
 
+  // New: Function to navigate back to landing page
+  const handleBackToHome = () => {
+    window.location.href = "/"; // Change to your landing page URL if different
+  };
+
   const topTopic = stats.topics[0];
 
   return (
@@ -121,7 +126,7 @@ export default function AdminDashboard() {
       {/* Foreground */}
       <div className="relative z-10 min-h-screen flex items-center justify-center px-4 py-8 md:py-12">
         <div className="w-full max-w-6xl bg-white/95 backdrop-blur-lg rounded-3xl shadow-2xl border border-white/40 overflow-hidden flex flex-col max-h-[90vh]">
-          {/* Header */}
+          {/* Header - Added back button here */}
           <div className="flex items-center justify-between px-6 py-5 border-b border-slate-200/60 bg-white/50">
             <div className="flex items-center gap-3">
               <div className="h-9 w-9 rounded-full bg-hotel-900 text-white flex items-center justify-center text-xs font-serif font-bold shadow-md">
@@ -135,17 +140,25 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-ocean-600 text-white text-sm shadow hover:bg-ocean-700 cursor-pointer">
-              <IconUpload className="w-4 h-4" />
-              {isUploading ? "Uploading..." : "Upload PDF"}
-              <input
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                onChange={handleFileUpload}
-                disabled={isUploading}
-              />
-            </label>
+            <div className="flex gap-3">
+              <button
+                onClick={handleBackToHome}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-600 text-white text-sm shadow hover:bg-gray-700 cursor-pointer"
+              >
+                Back to Home
+              </button>
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-ocean-600 text-white text-sm shadow hover:bg-ocean-700 cursor-pointer">
+                <IconUpload className="w-4 h-4" />
+                {isUploading ? "Uploading..." : "Upload PDF"}
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={isUploading}
+                />
+              </label>
+            </div>
           </div>
 
           {/* Scroll area */}
@@ -163,93 +176,46 @@ export default function AdminDashboard() {
                         stroke="currentColor"
                         strokeWidth="2"
                       >
-                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                        <polyline points="14 2 14 8 20 8" />
-                        <line x1="16" x2="8" y1="13" y2="13" />
-                        <line x1="16" x2="8" y1="17" y2="17" />
-                        <line x1="10" x2="8" y1="9" y2="9" />
+                        <path d="M12 2v20M2 12h20" />
                       </svg>
                     </div>
-                    <h3 className="font-semibold text-slate-700 text-sm">
+                    <h3 className="text-sm font-semibold text-slate-700">
                       Knowledge Base
                     </h3>
                   </div>
-                  <span className="text-[10px] font-bold text-slate-400 tracking-wider">
-                    PDF
+                  <span
+                    className={`text-[10px] font-medium px-2 py-0.5 rounded ${
+                      stats.hasFile
+                        ? "bg-green-50 text-green-700 border border-green-100"
+                        : "bg-orange-50 text-orange-700 border border-orange-100"
+                    }`}
+                  >
+                    {stats.hasFile ? "Active" : "Setup Required"}
                   </span>
                 </div>
 
-                <div className="p-6">
-                  <div
-                    className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
-                      stats.hasFile
-                        ? "border-green-200 bg-green-50/50"
-                        : "border-slate-300 hover:border-ocean-400 hover:bg-white"
-                    }`}
-                  >
-                    <p className="font-medium text-slate-900 mb-1 text-sm">
-                      {stats.hasFile
-                        ? "Knowledge base active"
-                        : "Click Upload PDF to choose a file"}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {stats.hasFile
-                        ? "The assistant is using the current PDF."
-                        : "Upload the hotel guide PDF to update the assistant."}
-                    </p>
-                    <div className="mt-3 text-xs text-slate-400">
-                      Base API: <span className="font-mono">{API_BASE}</span>
-                    </div>
-                  </div>
+                <div className="p-5">
+                  <p className="text-xs text-slate-500 mb-1">
+                    Base API https://cincinnati-
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {stats.hasFile && stats.lastUpdate
+                      ? `Last update ${new Date(stats.lastUpdate).toLocaleString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}`
+                      : "Upload PDF to start"}
+                  </p>
                 </div>
               </div>
 
-              {/* Status mini cards */}
-              <div className="flex flex-col gap-4">
-                <div className="bg-slate-50/50 rounded-2xl border border-slate-200/60 p-5 flex-1 flex flex-col justify-center">
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">
-                    Status
-                  </h4>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        stats.hasFile
-                          ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"
-                          : "bg-orange-500"
-                      }`}
-                    />
-                    <span className="font-semibold text-slate-700 text-sm">
-                      {stats.hasFile ? "System Online" : "Setup Required"}
-                    </span>
-                  </div>
-                  <div
-                    className={`p-2.5 rounded-lg text-xs font-medium border text-center ${
-                      stats.hasFile
-                        ? "bg-green-50 border-green-100 text-green-700"
-                        : "bg-orange-50 border-orange-100 text-orange-700"
-                    }`}
-                  >
-                    {stats.hasFile
-                      ? `Active${
-                          stats.lastUpdate
-                            ? ` · ${new Date(
-                                stats.lastUpdate
-                              ).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}`
-                            : ""
-                        }`
-                      : "Upload PDF to start"}
-                  </div>
-                </div>
-
-                <div className="bg-slate-50/50 rounded-2xl border border-slate-200/60 p-5">
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Auto refresh
-                  </h4>
-                  <p className="text-xs text-slate-500">Every 30 seconds</p>
-                </div>
+              <div className="bg-slate-50/50 rounded-2xl border border-slate-200/60 p-5">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Auto refresh
+                </h4>
+                <p className="text-xs text-slate-500">Every 30 seconds</p>
               </div>
 
               {/* Overview cards */}

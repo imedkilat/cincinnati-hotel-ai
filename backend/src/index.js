@@ -150,6 +150,11 @@ app.post("/api/chat/message", async (req, res) => {
       reply = out?.answer || out?.reply || reply;
       topic = out?.topic || topic;
       canAnswer = out?.canAnswer !== false;
+      // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
+  // ADD THIS: Update stats.topics with the new topic count
+  if (topic && topic !== "Uncategorized") {
+    stats.topics[topic] = (stats.topics[topic] || 0) + 1;
+  }
     } else {
       canAnswer = false;
       reply = "I'm having trouble reaching the AI right now.";
