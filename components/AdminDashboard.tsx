@@ -67,39 +67,40 @@ export default function AdminDashboard() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || file.type !== "application/pdf") {
+      alert("Please select a valid PDF file");
+      return;
+    }
+
     setIsUploading(true);
 
-    async function tryUpload(url: string, fieldName: "file" | "pdf") {
-      const fd = new FormData();
-      fd.append(fieldName, file);
-      const res = await fetch(url, { method: "POST", body: fd });
+    const formData = new FormData();
+    formData.append("file", file); // backend expects "file"
+
+    try {
+      const res = await fetch(API.uploadPdf, {
+        method: "POST",
+        body: formData,
+      });
+
       if (!res.ok) {
         const text = await res.text();
         throw new Error(
-          `Upload failed → ${res.status} ${res.statusText} @ ${url} as "${fieldName}"\n${text}`
+          `Upload failed: ${res.status} ${res.statusText}\n${text}`
         );
       }
-      return res.json();
-    }
 
-    try {
-      try {
-        await tryUpload(API.uploadPdf, "file");
-      } catch {
-        try {
-          await tryUpload(API.uploadPdf, "pdf");
-        } catch {
-          await tryUpload(`${API_BASE}/api/admin/upload`, "file");
-        }
-      }
-      await loadStats();
-    } catch (err) {
-      console.error(String(err));
-      alert("Upload failed. Open DevTools → Network for details.");
+      await res.json();
+      alert("PDF uploaded successfully!");
+      await loadStats(); // refresh stats
+    } catch (err: any) {
+      console.error("PDF upload error:", err);
+      alert(
+        "Upload failed. Check console (F12 → Console/Network) for details."
+      );
     } finally {
       setIsUploading(false);
-      e.currentTarget.value = "";
+      e.currentTarget.value = ""; // reset input
     }
   };
 

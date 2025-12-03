@@ -19,6 +19,10 @@ const sessions = {};                      // { [sessionId]: { questions, unanswe
 const recentSessions = [];                // newest first [{ id, questionCount, status, startTime }]
 const stats = { totalSessions: 0, topics: {}, unansweredQuestions: 0, currentPdf: null };
 
+let currentPdfMeta = null; // { filename, uploadedAt }
+let currentPdfMeta: { filename: string; uploadedAt: string } | null = null;
+let hotelText = ""; // extracted text from the uploaded hotel PDF
+
 // Single webhook URL to your n8n workflow.
 // If you change the path in n8n later, update this string.
 
@@ -34,20 +38,21 @@ const N8N_WEBHOOK_URL =
 const upload = multer({
   dest: path.join(__dirname, "../uploads"),
 });
-let currentPdfMeta = null; // { filename, uploadedAt }
 
-let hotelText = ""; // extracted text from the uploaded hotel PDF
 
 // -------- Admin routes --------
 // Upload hotel PDF
-// Upload hotel PDF
 app.post("/api/admin/pdf", upload.single("file"), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file" });
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
 
   try {
-    currentPdfPath = req.file.path;
+    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
+    // FIX: Use the correct variable name (with "let" or just assign properly)
+    currentPdfPath = req.file.path;   // ← this is correct (you already have the var at top)
+    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
 
-    // Read and extract text from the PDF
     const dataBuffer = fs.readFileSync(currentPdfPath);
     const parsed = await pdfParse(dataBuffer);
     hotelText = parsed.text || "";
@@ -57,21 +62,28 @@ app.post("/api/admin/pdf", upload.single("file"), async (req, res) => {
       uploadedAt: new Date().toISOString(),
     };
 
-    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
-    // ADD THIS LINE RIGHT HERE (after currentPdfMeta is set)
+    // Update stats so admin panel shows the current PDF
     stats.currentPdf = currentPdfMeta;
-    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
 
-    console.log("PDF uploaded, extracted text length:", hotelText.length);
+    console.log("PDF uploaded & parsed successfully:", {
+      filename: req.file.originalname,
+      size: req.file.size,
+      textLength: hotelText.length,
+    });
 
     return res.json({
       ok: true,
       path: currentPdfPath,
       textLength: hotelText.length,
+      filename: req.file.originalname,
     });
-  } catch (err) {
-    console.error("Error parsing PDF", err);
-    return res.status(500).json({ error: "Failed to parse PDF" });
+  } catch (err: any) {
+    console.error("Error parsing PDF:", err.message);
+    console.error("File path was:", currentPdfPath);
+    return res.status(500).json({ 
+      error: "Failed to parse PDF",
+      details: err.message 
+    });
   }
 });
 
