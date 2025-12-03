@@ -128,8 +128,10 @@ app.post("/api/chat/message", async (req, res) => {
   };
 
   console.log("Sending to n8n →", N8N_WEBHOOK_URL);
-  console.log("Payload:", JSON.stringify(payloadToN8n, null, 2));
+   console.log("Payload:", JSON.stringify(payloadToN8n, null, 2));
 
+  // THESE 3 LINES ARE THE ONLY THING MISSING
+  let reply = "Sorry, I don't have that information right now.";
   let topic = "Uncategorized";
   let canAnswer = true;
 
@@ -144,22 +146,17 @@ app.post("/api/chat/message", async (req, res) => {
       const data = await response.json();
       const out = Array.isArray(data) ? data[0] : data;
 
+      // n8n sends back the real answer → we overwrite the fallback
       reply = out?.answer || out?.reply || reply;
       topic = out?.topic || topic;
       canAnswer = out?.canAnswer !== false;
     } else {
-      console.error(
-        "n8n returned error:",
-        response.status,
-        await response.text()
-      );
       canAnswer = false;
-      reply = "Sorry, I'm having trouble connecting right now.";
+      reply = "I'm having trouble reaching the AI right now.";
     }
   } catch (err) {
-    console.error("Fetch error to n8n:", err.message);
     canAnswer = false;
-    reply = "Sorry, something went wrong on my side.";
+    reply = "Something went wrong. Please try again.";
   }
 
   // Session tracking

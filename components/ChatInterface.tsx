@@ -172,13 +172,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBack }) => {
               </div>
               <span className="text-xs font-semibold text-white">Online</span>
             </div>
-            <button
+            {/* <button
               onClick={handleNewChat}
               className="text-xs px-2 py-1 rounded bg-white/15 hover:bg-white/25 text-white border border-white/20 transition-colors"
               title="Start a new conversation"
             >
               New chat
-            </button>
+            </button> */}
           </div>
         </div>
 
