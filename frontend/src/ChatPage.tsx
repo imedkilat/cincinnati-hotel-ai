@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { API_BASE } from '../../config'; // adjust the path if needed
+
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5001";
 
@@ -49,17 +51,15 @@ export default function ChatPage() {
     setEscalationSent(false);
 
     try {
-      const res = await fetch(`${BACKEND_URL}/api/chat/message`, {
+      const res = await fetch(`${API_BASE}/api/chat/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          message: trimmed,
-        }),
+        body: JSON.stringify({ message: text }),
       });
-
       const data = await res.json();
-      console.log("Chat response from backend:", data);
+      const reply =
+        data.reply ?? "Sorry, I don't have that information right now.";
+      // update the bot message bubble with `reply`
 
       const botMessage = {
         id: Date.now() + "-bot",
@@ -95,7 +95,7 @@ export default function ChatPage() {
       const lastUserQuestion =
         [...messages].reverse().find((m) => m.from === "user")?.text || "";
 
-      const res = await fetch(`${BACKEND_URL}/api/chat/escalate`, {
+      const res = await fetch(`${API_BASE}/api/chat/escalate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

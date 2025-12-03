@@ -1,31 +1,34 @@
+export enum Sender {
+  User = 'user',
+  Bot = 'bot',
+}
+
 export interface Message {
   id: string;
-  role: 'user' | 'model';
   text: string;
+  sender: Sender;
   timestamp: Date;
 }
 
-export interface ChatState {
-  messages: Message[];
-  isLoading: boolean;
-  error: string | null;
+export type ViewState = 'landing' | 'chat' | 'admin';
+
+export interface HotelStats {
+  sessions: number;
+  unanswered: number;
+  lastUpdate: Date | null;
+  hasFile: boolean;
 }
 
-export type TabView = 'guest' | 'admin';
-
-export interface HotelConfig {
-  hotelName: string;
-  systemInstruction: string;
+export interface SessionRecord {
+  id: string;
+  questionCount: number;
+  unansweredCount: number;
+  startTime: string;
+  status: 'Resolved' | 'Needs Review';
 }
 
-export interface PdfContext {
-  name: string;
-  data: string; // base64
-  mimeType: string;
-}
-
-export interface AppStats {
-  totalSessions: number;
-  totalMessages: number;
-  topics: { name: string; count: number }[];
+export interface TopicStat {
+  topic: string;
+  percentage: number;
+  count: number;
 }

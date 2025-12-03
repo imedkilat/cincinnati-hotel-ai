@@ -14,6 +14,11 @@ app.use(express.json({ limit: "4mb" }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// single sources of truth (keep these ONLY once in the file)
+const sessions = {};                      // { [sessionId]: { questions, unansweredCount, startedAt, status } }
+const recentSessions = [];                // newest first [{ id, questionCount, status, startTime }]
+const stats = { totalSessions: 0, topics: {}, unansweredQuestions: 0, currentPdf: null };
+
 // Single webhook URL to your n8n workflow.
 // If you change the path in n8n later, update this string.
 
@@ -31,10 +36,10 @@ const upload = multer({
 });
 let currentPdfMeta = null; // { filename, uploadedAt }
 
-let currentPdfPath = null;
 let hotelText = ""; // extracted text from the uploaded hotel PDF
 
 // -------- Admin routes --------
+// Upload hotel PDF
 // Upload hotel PDF
 app.post("/api/admin/pdf", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file" });
@@ -51,6 +56,11 @@ app.post("/api/admin/pdf", upload.single("file"), async (req, res) => {
       filename: req.file.originalname,
       uploadedAt: new Date().toISOString(),
     };
+
+    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
+    // ADD THIS LINE RIGHT HERE (after currentPdfMeta is set)
+    stats.currentPdf = currentPdfMeta;
+    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
 
     console.log("PDF uploaded, extracted text length:", hotelText.length);
 
@@ -80,83 +90,94 @@ app.get("/api/admin/stats", (_req, res) => {
 
 
 // -------- Chat routes --------
-// Chat message: frontend -> backend -> n8n -> backend -> frontend
 import crypto from "node:crypto";
-
-// single sources of truth (keep these ONLY once in the file)
-const sessions = {};                      // { [sessionId]: { questions, unansweredCount, startedAt, status } }
-const recentSessions = [];                // newest first [{ id, questionCount, status, startTime }]
-const stats = { totalSessions: 0, topics: {}, unansweredQuestions: 0, currentPdf: null };
-
 
 // Chat message: frontend -> backend -> n8n -> backend -> frontend
 app.post("/api/chat/message", async (req, res) => {
   const { sessionId: clientSid, message } = req.body || {};
-  if (!message) return res.status(400).json({ error: "Missing message" });
 
-  const sessionKey = clientSid || crypto.randomUUID();
+  if (!message || typeof message !== "string") {
+    return res.status(400).json({ error: "Missing or invalid message" });
+  }
 
-  const payload = {
-    sessionId: sessionKey,
-    message,
+  // Generate session ID if not provided (first message)
+  const sessionId = clientSid || crypto.randomUUID();
+
+  // THIS IS WHAT n8n WILL RECEIVE
+  const payloadToN8n = {
+    sessionId,              // this MUST be here
+    message: message.trim(),
     hotelInfo: hotelText || "",
   };
 
-  console.log("Sending to n8n:", JSON.stringify(payload, null, 2));
-  console.log("CHAT →", N8N_WEBHOOK_URL, "sid:", sessionKey, "payloadKeys:", Object.keys(payload));
+  console.log("Sending to n8n →", N8N_WEBHOOK_URL);
+  console.log("Payload:", JSON.stringify(payloadToN8n, null, 2));
 
-  let reply = "Sorry, I don't have that information right now.";
+
   let topic = "Uncategorized";
   let canAnswer = true;
 
   try {
-    const r = await fetch(N8N_WEBHOOK_URL, {
+    const response = await fetch(N8N_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(payloadToN8n),
     });
 
-    if (r.ok) {
-      const raw = await r.text();
-      let data; try { data = JSON.parse(raw); } catch { data = raw; }
+    if (response.ok) {
+      const data = await response.json();
       const out = Array.isArray(data) ? data[0] : data;
+
       reply = out?.answer || out?.reply || reply;
       topic = out?.topic || topic;
-      canAnswer = typeof out?.canAnswer === "boolean" ? out.canAnswer : true;
+      canAnswer = out?.canAnswer !== false;
     } else {
-      console.error("n8n chat error:", r.status, await r.text());
+      console.error("n8n returned error:", response.status, await response.text());
       canAnswer = false;
-      topic = "System";
-      reply = "Sorry, I can’t reach the knowledge workflow right now.";
+      reply = "Sorry, I'm having trouble connecting right now.";
     }
   } catch (err) {
-    console.error("Chat error:", err);
+    console.error("Fetch error to n8n:", err.message);
     canAnswer = false;
-    topic = "System";
-    reply = "Sorry, something went wrong.";
+    reply = "Sorry, something went wrong on my side.";
   }
 
-  // track session + recent list
-  const nowIso = new Date().toISOString();
-  if (!sessions[sessionKey]) {
-    sessions[sessionKey] = { questions: 0, unansweredCount: 0, startedAt: nowIso, status: "Resolved" };
-    stats.totalSessions = (stats.totalSessions || 0) + 1;
-    recentSessions.unshift({ id: sessionKey, questionCount: 0, status: "Resolved", startTime: nowIso });
+  // Session tracking
+  if (!sessions[sessionId]) {
+    sessions[sessionId] = {
+      questions: 0,
+      unansweredCount: 0,
+      startedAt: new Date().toISOString(),
+      status: "Resolved",
+    };
+    stats.totalSessions += 1;
+    recentSessions.unshift({
+      id: sessionId,
+      questionCount: 0,
+      status: "Resolved",
+      startTime: new Date().toISOString(),
+    });
     if (recentSessions.length > 50) recentSessions.pop();
   }
 
-  sessions[sessionKey].questions += 1;
-  const rs = recentSessions.find(s => s.id === sessionKey);
-  if (rs) rs.questionCount += 1;
+  sessions[sessionId].questions += 1;
+  const recentSession = recentSessions.find(s => s.id === sessionId);
+  if (recentSession) recentSession.questionCount += 1;
 
   if (!canAnswer) {
-    sessions[sessionKey].unansweredCount += 1;
-    sessions[sessionKey].status = "Needs Review";
-    if (rs) rs.status = "Needs Review";
-    stats.unansweredQuestions = (stats.unansweredQuestions || 0) + 1;
+    sessions[sessionId].unansweredCount += 1;
+    sessions[sessionId].status = "Needs Review";
+    if (recentSession) recentSession.status = "Needs Review";
+    stats.unansweredQuestions += 1;
   }
 
-  res.json({ reply, topic, canAnswer, sessionId: sessionKey });
+  // This is what frontend receives — includes sessionId!
+  res.json({
+    reply,
+    topic,
+    canAnswer,
+    sessionId,  // always include — critical for first message!
+  });
 });
 
 
