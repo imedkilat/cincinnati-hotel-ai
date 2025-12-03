@@ -128,7 +128,7 @@ app.post("/api/chat/message", async (req, res) => {
   };
 
   console.log("Sending to n8n →", N8N_WEBHOOK_URL);
-   console.log("Payload:", JSON.stringify(payloadToN8n, null, 2));
+  console.log("Payload:", JSON.stringify(payloadToN8n, null, 2));
 
   // THESE 3 LINES ARE THE ONLY THING MISSING
   let reply = "Sorry, I don't have that information right now.";
@@ -151,10 +151,10 @@ app.post("/api/chat/message", async (req, res) => {
       topic = out?.topic || topic;
       canAnswer = out?.canAnswer !== false;
       // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
-  // ADD THIS: Update stats.topics with the new topic count
-  if (topic && topic !== "Uncategorized") {
-    stats.topics[topic] = (stats.topics[topic] || 0) + 1;
-  }
+      // ADD THIS: Update stats.topics with the new topic count
+      if (topic && topic !== "Uncategorized") {
+        stats.topics[topic] = (stats.topics[topic] || 0) + 1;
+      }
     } else {
       canAnswer = false;
       reply = "I'm having trouble reaching the AI right now.";
@@ -171,6 +171,7 @@ app.post("/api/chat/message", async (req, res) => {
       unansweredCount: 0,
       startedAt: new Date().toISOString(),
       status: "Resolved",
+      messages: [],
     };
     stats.totalSessions += 1;
     recentSessions.unshift({
@@ -182,6 +183,15 @@ app.post("/api/chat/message", async (req, res) => {
     if (recentSessions.length > 50) recentSessions.pop();
   }
 
+  // After getting reply from n8n, store both user message and bot reply
+  sessions[sessionId].messages.push(
+    {
+      sender: "user",
+      text: message.trim(),
+      timestamp: new Date().toISOString(),
+    },
+    { sender: "bot", text: reply, timestamp: new Date().toISOString() }
+  );
   sessions[sessionId].questions += 1;
   const recentSession = recentSessions.find((s) => s.id === sessionId);
   if (recentSession) recentSession.questionCount += 1;
@@ -200,6 +210,29 @@ app.post("/api/chat/message", async (req, res) => {
     canAnswer,
     sessionId, // always include — critical for first message!
   });
+});
+
+// New: Get chat history for a session
+app.get("/api/chat/history", (req, res) => {
+  const { sessionId } = req.query;
+  if (!sessionId || typeof sessionId !== "string") {
+    return res.status(400).json({ error: "Missing sessionId" });
+  }
+
+  const session = sessions[sessionId];
+  if (!session) {
+    return res.json([]); // No history
+  }
+
+  // Build full conversation from session data
+  const history = [];
+
+  // Add all questions and answers (you need to store them!)
+  if (session.messages && Array.isArray(session.messages)) {
+    history.push(...session.messages);
+  }
+
+  res.json(history);
 });
 
 // Escalate unanswered question (called from frontend contact form)

@@ -36,21 +36,84 @@ const formatTime = (date: Date) =>
   date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBack }) => {
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-
-  // Persist session across page reloads
-  const [sessionId, setSessionId] = useState<string | null>(() => {
-    return localStorage.getItem("ch_session_id");
-  });
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollToBottom = () =>
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+
+  // On mount: restore sessionId + load history
+  useEffect(() => {
+    const savedSessionId = localStorage.getItem("ch_session_id");
+    if (savedSessionId) {
+      setSessionId(savedSessionId);
+      loadChatHistory(savedSessionId);
+    } else {
+      // First time visitor
+      setMessages(INITIAL_MESSAGES);
+      setIsLoadingHistory(false);
+    }
+  }, []);
+
+  // On mount: restore sessionId + load history
+  useEffect(() => {
+    const savedSessionId = localStorage.getItem("ch_session_id");
+    if (savedSessionId) {
+      setSessionId(savedSessionId);
+      loadChatHistory(savedSessionId);
+    } else {
+      setMessages(INITIAL_MESSAGES);
+      setIsLoadingHistory(false);
+    }
+  }, []); // ← Empty dependency array: runs only on first mount
+
+  // Auto-scroll
+  useEffect(() => {
+    if (!isLoadingHistory) scrollToBottom();
+  }, [messages, isTyping]);
+
+  // Fetch history
+  const loadChatHistory = async (sid: string) => {
+    setIsLoadingHistory(true);
+    try {
+      const res = await fetch(`${API.chat}/history?sessionId=${sid}`);
+      if (res.ok) {
+        const history = await res.json();
+        const formatted = history.map((m: any) => ({
+          id: m.id || cryptoRandomId(),
+          text: m.text,
+          sender: m.sender,
+          timestamp: new Date(m.timestamp),
+        }));
+        setMessages(formatted.length > 0 ? formatted : INITIAL_MESSAGES);
+      } else {
+        setMessages(INITIAL_MESSAGES);
+      }
+    } catch (err) {
+      console.error("Failed to load history:", err);
+      setMessages(INITIAL_MESSAGES);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  // New: State for escalate form
+  const [showEscalateForm, setShowEscalateForm] = useState(false);
+  const [escalateFormData, setEscalateFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    question: "",
+  });
+  const [formFadingOut, setFormFadingOut] = useState(false); // For fade-out animation
+
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isTyping]);
+  }, [messages, isTyping, showEscalateForm]);
 
   const handleSend = async (text: string) => {
     if (!text.trim()) return;
@@ -65,7 +128,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBack }) => {
     setInput("");
     setIsTyping(true);
 
-    // placeholder bot bubble we will fill with the reply
     const botId = cryptoRandomId();
     setMessages((prev) => [
       ...prev,
@@ -78,7 +140,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBack }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text,
-          sessionId: sessionId ?? undefined, // send if we have it
+          sessionId: sessionId ?? undefined,
         }),
       });
 
@@ -91,15 +153,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBack }) => {
       const reply =
         data.reply ?? "Sorry, I don't have that information right now.";
 
-      // store session id from backend if provided
-      if (data.sessionId && data.sessionId !== sessionId) {
-        setSessionId(data.sessionId);
-        localStorage.setItem("ch_session_id", data.sessionId);
-      }
-
       setMessages((prev) =>
         prev.map((m) => (m.id === botId ? { ...m, text: reply } : m))
       );
+
+      // New: If cannot answer, show escalate form
+      if (!data.canAnswer) {
+        setEscalateFormData((prev) => ({ ...prev, question: text }));
+        setShowEscalateForm(true);
+      }
     } catch (e) {
       console.error(e);
       setMessages((prev) =>
@@ -112,6 +174,60 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBack }) => {
     } finally {
       setIsTyping(false);
     }
+  };
+
+  // New: Handle escalate form submit
+  const handleEscalateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const transcript = messages
+      .map((m) => `${m.sender.toUpperCase()}: ${m.text}`)
+      .join("\n\n");
+
+    const payload = {
+      ...escalateFormData,
+      transcript,
+      sessionId,
+    };
+
+    try {
+      const r = await fetch(API.escalate || "/api/chat/escalate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (r.ok) {
+        // Fade out form
+        setFormFadingOut(true);
+        setTimeout(() => {
+          setShowEscalateForm(false);
+          setFormFadingOut(false);
+          alert("Your question has been escalated successfully!");
+        }, 500); // Match fade-out duration
+      } else {
+        alert("Failed to escalate. Please try again.");
+      }
+    } catch (err) {
+      console.error("Escalate error:", err);
+      alert("Network error during escalation.");
+    }
+  };
+
+  // New: Handle form input changes
+  const handleEscalateChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+    setEscalateFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // New: Cancel form (fade out)
+  const handleEscalateCancel = () => {
+    setFormFadingOut(true);
+    setTimeout(() => {
+      setShowEscalateForm(false);
+      setFormFadingOut(false);
+    }, 500);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -146,112 +262,150 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBack }) => {
         </div>
 
         {/* Header */}
-        <div className="px-6 pb-4 -mt-12 relative z-10 flex items-end justify-between shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg ring-1 ring-slate-100">
-              <div className="w-full h-full bg-hotel-900 rounded-full flex items-center justify-center text-white font-serif font-bold text-lg">
-                CH
-              </div>
+        <div className="px-6 pb-4 -mt-12 relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="h-12 w-12 rounded-full bg-white text-hotel-900 flex items-center justify-center text-base font-serif font-bold shadow-md">
+              CH
             </div>
-            <div className="mb-1">
-              <h2 className="font-serif font-bold text-xl text-white drop-shadow-md leading-tight">
-                {HOTEL_NAME}
-              </h2>
-              {sessionId && (
-                <p className="text-[10px] text-white/80">
-                  Session: {sessionId.slice(0, 8)}…
-                </p>
-              )}
+            <div>
+              <p className="text-xl font-bold text-white">{HOTEL_NAME}</p>
+              <p className="text-xs text-slate-300 font-medium -mt-0.5">
+                Hotel Assistant
+              </p>
             </div>
-          </div>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="hidden sm:flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20">
-              <div className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
-              </div>
-              <span className="text-xs font-semibold text-white">Online</span>
-            </div>
-            {/* <button
-              onClick={handleNewChat}
-              className="text-xs px-2 py-1 rounded bg-white/15 hover:bg-white/25 text-white border border-white/20 transition-colors"
-              title="Start a new conversation"
-            >
-              New chat
-            </button> */}
           </div>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50 no-scrollbar">
-          <div className="space-y-6">
-            <div className="text-center text-[10px] font-bold text-slate-300 my-4 uppercase tracking-widest">
-              Today
-            </div>
-            {messages.map((msg) => (
+        <div className="flex-1 overflow-y-auto px-6 pb-4 flex flex-col gap-4 no-scrollbar">
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex flex-col ${
+                msg.sender === "user" ? "items-end" : "items-start"
+              }`}
+            >
               <div
-                key={msg.id}
-                className={`flex flex-col ${
-                  msg.sender === "user" ? "items-end" : "items-start"
+                className={`flex gap-3 max-w-[80%] ${
+                  msg.sender === "user" ? "flex-row-reverse" : ""
                 }`}
               >
-                <div
-                  className={`flex gap-3 max-w-[85%] md:max-w-[75%] ${
-                    msg.sender === "user" ? "flex-row-reverse" : "flex-row"
-                  }`}
-                >
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-auto shadow-sm ${
-                      msg.sender === "user"
-                        ? "bg-ocean-600 text-white"
-                        : "bg-white border border-slate-200 text-hotel-900"
-                    }`}
-                  >
-                    {msg.sender === "user" ? (
-                      <IconUser className="w-4 h-4" />
-                    ) : (
-                      <IconBot className="w-4 h-4" />
-                    )}
-                  </div>
-                  <div
-                    className={`p-4 text-sm leading-relaxed shadow-sm ${
-                      msg.sender === "user"
-                        ? "bg-ocean-600 text-white rounded-2xl rounded-br-none"
-                        : "bg-white text-slate-700 rounded-2xl rounded-bl-none border border-slate-200/60"
-                    }`}
-                  >
-                    {msg.text}
-                  </div>
-                </div>
-                <span
-                  className={`text-[10px] text-slate-400/60 mt-1.5 ${
-                    msg.sender === "user" ? "mr-12" : "ml-12"
-                  }`}
-                >
-                  {formatTime(msg.timestamp)}
-                </span>
-              </div>
-            ))}
-
-            {isTyping && (
-              <div className="flex flex-col items-start">
-                <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-white border border-slate-200 text-hotel-900 flex items-center justify-center flex-shrink-0 mt-auto shadow-sm">
+                <div className="w-8 h-8 rounded-full bg-white border border-slate-200 text-hotel-900 flex items-center justify-center flex-shrink-0 mt-auto shadow-sm">
+                  {msg.sender === "user" ? (
+                    <IconUser className="w-4 h-4" />
+                  ) : (
                     <IconBot className="w-4 h-4" />
-                  </div>
-                  <div className="bg-white p-4 rounded-2xl rounded-bl-none border border-slate-200/60 shadow-sm flex items-center gap-1">
-                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></div>
-                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-75"></div>
-                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-150"></div>
-                  </div>
+                  )}
                 </div>
-                <span className="text-[10px] text-slate-400/60 mt-1.5 ml-12">
-                  Typing...
-                </span>
+                <div
+                  className={`p-4 text-sm leading-relaxed shadow-sm ${
+                    msg.sender === "user"
+                      ? "bg-ocean-600 text-white rounded-2xl rounded-br-none"
+                      : "bg-white text-slate-700 rounded-2xl rounded-bl-none border border-slate-200/60"
+                  }`}
+                >
+                  {msg.text}
+                </div>
               </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
+              <span
+                className={`text-[10px] text-slate-400/60 mt-1.5 ${
+                  msg.sender === "user" ? "mr-12" : "ml-12"
+                }`}
+              >
+                {formatTime(msg.timestamp)}
+              </span>
+            </div>
+          ))}
+
+          {isTyping && (
+            <div className="flex flex-col items-start">
+              <div className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-white border border-slate-200 text-hotel-900 flex items-center justify-center flex-shrink-0 mt-auto shadow-sm">
+                  <IconBot className="w-4 h-4" />
+                </div>
+                <div className="bg-white p-4 rounded-2xl rounded-bl-none border border-slate-200/60 shadow-sm flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></div>
+                  <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-75"></div>
+                  <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-150"></div>
+                </div>
+              </div>
+              <span className="text-[10px] text-slate-400/60 mt-1.5 ml-12">
+                Typing...
+              </span>
+            </div>
+          )}
+
+          {/* New: Escalate Form (shows when canAnswer is false) */}
+          {showEscalateForm && (
+            <div
+              className={`flex justify-start animate-${
+                formFadingOut ? "fadeOut" : "fadeIn"
+              }`}
+            >
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-md max-w-md">
+                <h3 className="text-sm font-bold mb-4 text-slate-800">
+                  Escalate Your Question
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  I couldn't find an answer in our knowledge base. Please
+                  provide your details, and we'll escalate this to the team.
+                </p>
+                <form onSubmit={handleEscalateSubmit} className="space-y-3">
+                  <input
+                    type="text"
+                    name="name"
+                    value={escalateFormData.name}
+                    onChange={handleEscalateChange}
+                    placeholder="Your Name"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md"
+                    required
+                  />
+                  <input
+                    type="email"
+                    name="email"
+                    value={escalateFormData.email}
+                    onChange={handleEscalateChange}
+                    placeholder="Your Email"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md"
+                    required
+                  />
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={escalateFormData.phone}
+                    onChange={handleEscalateChange}
+                    placeholder="Your Phone (optional)"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md"
+                  />
+                  <textarea
+                    name="question"
+                    value={escalateFormData.question}
+                    onChange={handleEscalateChange}
+                    placeholder="Your Question"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md resize-none"
+                    rows={3}
+                    required
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleEscalateCancel}
+                      className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 text-sm bg-ocean-600 text-white rounded-md hover:bg-ocean-700"
+                    >
+                      Submit
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input */}
@@ -298,12 +452,29 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onBack }) => {
           </p>
         </div>
       </div>
+
+      {/* Inline CSS for fade animations */}
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeOut {
+          from { opacity: 1; transform: translateY(0); }
+          to { opacity: 0; transform: translateY(10px); }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.5s ease-out forwards;
+        }
+        .animate-fadeOut {
+          animation: fadeOut 0.5s ease-out forwards;
+        }
+      `}</style>
     </div>
   );
 };
 
 function cryptoRandomId() {
-  // good enough id for UI keys
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 

@@ -32,11 +32,6 @@ export const IconArrowLeft = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export const IconSparkles = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-  </svg>
-);
 
 export const IconUpload = ({ className }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -72,5 +67,20 @@ export const IconClock = ({ className }: { className?: string }) => (
 export const IconMessageSquare = ({ className }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>
+);
+export const IconSparkles = ({ className = "" }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M9.937 4.5L8.5 2 7.063 4.5 4.5 5.938 7.063 7.375 8.5 10l1.437-2.625L12.5 5.938 9.937 4.5z" />
+    <path d="M19.5 10l-1.05-1.95L17.4 10l-1.95 1.05L17.4 13l1.05 1.95L19.5 13l1.95-1.05L19.5 10z" />
+    <path d="M14.5 17l-.9-1.65L12.95 17l-1.65.9L12.95 20l.9 1.65L14.5 20l1.65-.9L14.5 17z" />
   </svg>
 );
